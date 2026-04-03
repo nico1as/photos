@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compteur de pompes debug</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0d0f12;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .app { width: min(960px, 100%); display: grid; gap: 12px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .card {
+      background: #161a20;
+      border: 1px solid #2a313b;
+      border-radius: 18px;
+      padding: 12px 14px;
+    }
+    .big { font-size: 32px; font-weight: 700; }
+    .camera {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 9/16;
+      border-radius: 22px;
+      overflow: hidden;
+      background: #000;
+      border: 1px solid #2a313b;
+    }
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    video, canvas { transform: scaleX(-1); }
+    .status {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      z-index: 10;
+      background: rgba(0,0,0,.6);
+      border: 1px solid rgba(255,255,255,.18);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 14px;
+    }
+    .bottom {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      background: rgba(0,0,0,.6);
+      border: 1px solid rgba(255,255,255,.18);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 14px;
+    }
+    .log {
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #cfe3ff;
+    }
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="row">
+      <div class="card big">Pompes : <span id="counter">0</span></div>
+      <div class="card">État : <span id="state">init</span></div>
+      <div class="card">Angle : <span id="angle">-</span></div>
+      <button id="reset">Reset</button>
+    </div>
+
+    <div class="camera">
+      <div class="status" id="status">Démarrage…</div>
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <div class="bottom">
+        <div class="pill">Caméra front</div>
+        <div class="pill">HTTPS requis</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div><strong>Debug</strong></div>
+      <div class="log" id="log">Aucun log.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      PoseLandmarker,
+      FilesetResolver
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const counterEl = document.getElementById("counter");
+    const stateEl = document.getElementById("state");
+    const angleEl = document.getElementById("angle");
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const resetBtn = document.getElementById("reset");
+
+    let counter = 0;
+    let phase = "up";
+    let landmarker = null;
+
+    function log(msg) {
+      console.log(msg);
+      logEl.textContent = msg + "\\n\\n" + logEl.textContent;
+    }
+
+    resetBtn.onclick = () => {
+      counter = 0;
+      phase = "up";
+      counterEl.textContent = "0";
+      stateEl.textContent = "reset";
+    };
+
+    function angle(a, b, c) {
+      const ab = [a.x - b.x, a.y - b.y];
+      const cb = [c.x - b.x, c.y - b.y];
+      const dot = ab[0] * cb[0] + ab[1] * cb[1];
+      const mag1 = Math.hypot(...ab);
+      const mag2 = Math.hypot(...cb);
+      const ratio = Math.max(-1, Math.min(1, dot / ((mag1 * mag2) || 1)));
+      return Math.acos(ratio) * 180 / Math.PI;
+    }
+
+    function drawPoint(p, color="#00ff99") {
+      ctx.beginPath();
+      ctx.arc(p.x * canvas.width, p.y * canvas.height, 6, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    function drawLine(a, b, color="#00d7ff") {
+      ctx.beginPath();
+      ctx.moveTo(a.x * canvas.width, a.y * canvas.height);
+      ctx.lineTo(b.x * canvas.width, b.y * canvas.height);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+
+    async function init() {
+      try {
+        if (!window.isSecureContext && location.hostname !== "localhost") {
+          throw new Error("Cette page doit être ouverte en HTTPS ou sur localhost pour accéder à la caméra.");
+        }
+
+        statusEl.textContent = "Demande d’accès caméra…";
+        log("Contexte sécurisé OK.");
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        log("Caméra front obtenue.");
+
+        statusEl.textContent = "Chargement MediaPipe…";
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+        );
+        log("WASM MediaPipe chargé.");
+
+        statusEl.textContent = "Chargement modèle pose…";
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+          },
+          runningMode: "VIDEO",
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.5,
+          minPosePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        log("Modèle pose chargé.");
+
+        video.onloadedmetadata = async () => {
+          await video.play();
+          canvas.width = video.videoWidth || 720;
+          canvas.height = video.videoHeight || 1280;
+          statusEl.textContent = "Caméra active";
+          log("Vidéo active : " + canvas.width + "x" + canvas.height);
+          requestAnimationFrame(loop);
+        };
+      } catch (e) {
+        statusEl.textContent = "Erreur caméra / modèle";
+        stateEl.textContent = "échec";
+        log("ERREUR : " + (e?.message || e));
+      }
+    }
+
+    function loop() {
+      if (!landmarker || video.readyState < 2) {
+        requestAnimationFrame(loop);
+        return;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      let result;
+      try {
+        result = landmarker.detectForVideo(video, performance.now());
+      } catch (e) {
+        log("detectForVideo erreur : " + (e?.message || e));
+        requestAnimationFrame(loop);
+        return;
+      }
+
+      if (result.landmarks && result.landmarks.length > 0) {
+        const lm = result.landmarks[0];
+        const shoulder = lm[12];
+        const elbow = lm[14];
+        const wrist = lm[16];
+
+        if (shoulder && elbow && wrist) {
+          drawLine(shoulder, elbow);
+          drawLine(elbow, wrist);
+          drawPoint(shoulder);
+          drawPoint(elbow);
+          drawPoint(wrist);
+
+          const a = angle(shoulder, elbow, wrist);
+          angleEl.textContent = a.toFixed(1) + "°";
+
+          if (a < 95) {
+            phase = "down";
+            stateEl.textContent = "en bas";
+          } else if (a > 155 && phase === "down") {
+            counter += 1;
+            counterEl.textContent = String(counter);
+            phase = "up";
+            stateEl.textContent = "en haut";
+          } else {
+            stateEl.textContent = phase === "down" ? "remontée" : "descente";
+          }
+        }
+      } else {
+        stateEl.textContent = "corps non détecté";
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test caméra simple</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+    }
+    .card {
+      width: min(900px, 95vw);
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 18px;
+      padding: 14px;
+    }
+    video {
+      width: min(900px, 95vw);
+      max-height: 75vh;
+      background: black;
+      border-radius: 18px;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    button {
+      padding: 12px 18px;
+      border: none;
+      border-radius: 999px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #bfe1ff;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Test caméra front simple</h2>
+    <p>Cette page ne charge aucun modèle IA. Elle teste uniquement l'accès caméra.</p>
+    <button id="startBtn">Démarrer la caméra</button>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
+
+  <div class="card">
+    <h3>Debug</h3>
+    <pre id="log">Prêt.</pre>
+  </div>
+
+  <script>
+    const video = document.getElementById("video");
+    const logEl = document.getElementById("log");
+    const startBtn = document.getElementById("startBtn");
+
+    function log(msg) {
+      console.log(msg);
+      logEl.textContent = msg + "\n\n" + logEl.textContent;
+    }
+
+    startBtn.addEventListener("click", async () => {
+      try {
+        log("Host: " + location.href);
+        log("Secure context: " + window.isSecureContext);
+
+        if (!window.isSecureContext && location.hostname !== "localhost") {
+          throw new Error("Page non sécurisée. Ouvre cette page en HTTPS ou sur localhost.");
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("getUserMedia non disponible sur ce navigateur.");
+        }
+
+        log("Demande d'accès caméra...");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        await video.play();
+
+        const track = stream.getVideoTracks()[0];
+        log("Caméra OK.");
+        log("Label: " + (track?.label || "inconnu"));
+        log("Settings: " + JSON.stringify(track?.getSettings?.() || {}, null, 2));
+      } catch (e) {
+        log("ERREUR: " + (e && e.message ? e.message : e));
+      }
+    });
+  </script>
+</body>
+</html>
