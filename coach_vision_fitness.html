@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coach Vision Fitness</title>
+  <style>
+    :root{
+      --bg:#081018;--panel:#0f1b2a;--panel2:#122033;--line:rgba(255,255,255,.10);
+      --text:#edf6ff;--muted:#98a9bd;--shadow:0 18px 40px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;color:var(--text);font-family:Inter,Arial,sans-serif;
+      background:radial-gradient(circle at top left, rgba(96,165,250,.20), transparent 35%),radial-gradient(circle at top right, rgba(94,234,212,.12), transparent 30%),linear-gradient(180deg,#06101a,#09131f 35%,#071019);}
+    .wrap{max-width:1400px;margin:0 auto;padding:16px;display:grid;gap:16px}
+    .top{display:grid;grid-template-columns:1.3fr .9fr;gap:16px}
+    .cameraCard,.sideCard,.bottomCard{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}
+    .cameraCard{padding:14px}.sideCol{display:grid;gap:16px}.sideCard,.bottomCard{padding:16px}
+    .cameraStage{position:relative;width:100%;aspect-ratio:9/16;max-height:82vh;border-radius:22px;overflow:hidden;background:#000;border:1px solid rgba(255,255,255,.08)}
+    video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+    video.mirror,canvas.mirror{transform:scaleX(-1)}
+    .hud,.hudBottom{position:absolute;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;z-index:10}
+    .hud{top:12px}.hudBottom{bottom:12px}
+    .pill{background:rgba(3,8,15,.62);border:1px solid rgba(255,255,255,.12);backdrop-filter: blur(8px);border-radius:999px;padding:8px 12px;font-size:13px;color:var(--text)}
+    .bigNumber{position:absolute;right:18px;top:50%;transform:translateY(-50%);z-index:10;font-size:min(16vw,110px);font-weight:900;line-height:.9;color:white;text-shadow:0 0 20px rgba(0,0,0,.55);text-align:right;pointer-events:none}
+    .miniLabel{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.title{font-size:22px;font-weight:800}.subtitle{color:var(--muted);font-size:14px;line-height:1.45}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:12px}.stat .value{font-size:30px;font-weight:900}
+    .controls{display:grid;gap:12px}.btnRow{display:flex;gap:10px;flex-wrap:wrap}
+    button,select{border:none;outline:none;border-radius:14px;padding:12px 14px;font-size:14px;font-weight:700}
+    select{background:#0d1724;color:var(--text);border:1px solid rgba(255,255,255,.08);width:100%}
+    button{cursor:pointer;background:#122033;color:var(--text);border:1px solid rgba(255,255,255,.08)}
+    button.primary{background:linear-gradient(135deg,#2563eb,#06b6d4)} button.good{background:linear-gradient(135deg,#0f766e,#10b981)}
+    button.warn{background:linear-gradient(135deg,#92400e,#f59e0b)} button.ghost{background:#0d1724}
+    .log{min-height:120px;max-height:220px;overflow:auto;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45;color:#c7dbff;background:#09111b;border-radius:16px;padding:12px;border:1px solid rgba(255,255,255,.06)}
+    .bottomCard{display:grid;grid-template-columns:1fr 1fr;gap:16px}.legend{display:flex;gap:10px;flex-wrap:wrap}.dot{display:inline-block;width:10px;height:10px;border-radius:50%}.tag{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+    @media (max-width:980px){.top{grid-template-columns:1fr}.bottomCard{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="cameraCard">
+        <div class="cameraStage">
+          <video id="video" autoplay playsinline muted class="mirror"></video>
+          <canvas id="canvas" class="mirror"></canvas>
+          <div class="hud">
+            <div class="pill"><span class="miniLabel">Exercice</span> <span id="hudExercise">Pompes</span></div>
+            <div class="pill"><span class="miniLabel">Mode</span> <span id="hudMode">Libre</span></div>
+            <div class="pill"><span class="miniLabel">Statut modèle</span> <span id="modelStatus">Chargement…</span></div>
+          </div>
+          <div class="bigNumber" id="bigCounter">0</div>
+          <div class="hudBottom">
+            <div class="pill"><span class="miniLabel">État</span> <span id="phaseLabel">Init</span></div>
+            <div class="pill"><span class="miniLabel">Temps</span> <span id="timerLabel">--:--</span></div>
+            <div class="pill"><span class="miniLabel">Confiance</span> <span id="confidenceLabel">0%</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="sideCol">
+        <div class="sideCard">
+          <div class="title">Coach Vision Fitness</div>
+          <div class="subtitle">Caméra + squelette de pose superposé + comptage d’exercices en direct.</div>
+          <div style="height:12px"></div>
+          <div class="controls">
+            <div><div class="miniLabel">Choix de l’exercice</div>
+              <select id="exerciseSelect">
+                <option value="pushup">Pompes</option><option value="squat">Squats</option><option value="lunge">Fentes</option><option value="burpee">Burpees</option>
+              </select>
+            </div>
+            <div class="btnRow">
+              <button id="startCameraBtn" class="primary">Démarrer caméra</button>
+              <button id="resetBtn" class="ghost">Reset</button>
+              <button id="toggleMirrorBtn" class="ghost">Mirror ON</button>
+            </div>
+            <div class="btnRow">
+              <button id="freeModeBtn" class="good">Mode libre</button>
+              <button id="minuteModeBtn" class="warn">Challenge 1 minute</button>
+            </div>
+          </div>
+        </div>
+        <div class="sideCard">
+          <div class="grid2">
+            <div class="stat"><div class="miniLabel">Compteur</div><div class="value" id="countValue">0</div></div>
+            <div class="stat"><div class="miniLabel">Timer</div><div class="value" id="timeValue">--</div></div>
+            <div class="stat"><div class="miniLabel">Angle / position</div><div class="value" id="metricValue">--</div></div>
+            <div class="stat"><div class="miniLabel">Statut</div><div class="value" id="statusValue">Init</div></div>
+          </div>
+        </div>
+        <div class="sideCard"><div class="miniLabel">Debug</div><div id="log" class="log">Prêt.</div></div>
+      </div>
+    </div>
+    <div class="bottomCard">
+      <div>
+        <div class="title">Superposition de pose</div>
+        <div class="subtitle">MediaPipe Pose Landmarker web détecte les points du corps dans une image ou une vidéo. ([ai.google.dev](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/web_js?utm_source=chatgpt.com))</div>
+        <div style="height:10px"></div>
+        <div class="legend">
+          <div class="tag"><span class="dot" style="background:#60a5fa"></span> Squelette</div>
+          <div class="tag"><span class="dot" style="background:#5eead4"></span> Points</div>
+          <div class="tag"><span class="dot" style="background:#f59e0b"></span> Repère utilisé</div>
+        </div>
+      </div>
+      <div>
+        <div class="title">Logique de comptage</div>
+        <div class="subtitle">Pompes, squats, fentes et burpees sont ici comptés par heuristiques sur la pose détectée, pas par un modèle d’exercice séparé.</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const modelStatus = document.getElementById("modelStatus");
+    const logEl = document.getElementById("log");
+    const exerciseSelect = document.getElementById("exerciseSelect");
+    const countValue = document.getElementById("countValue");
+    const bigCounter = document.getElementById("bigCounter");
+    const phaseLabel = document.getElementById("phaseLabel");
+    const timerLabel = document.getElementById("timerLabel");
+    const confidenceLabel = document.getElementById("confidenceLabel");
+    const metricValue = document.getElementById("metricValue");
+    const statusValue = document.getElementById("statusValue");
+    const timeValue = document.getElementById("timeValue");
+    const hudExercise = document.getElementById("hudExercise");
+    const hudMode = document.getElementById("hudMode");
+    const startCameraBtn = document.getElementById("startCameraBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const freeModeBtn = document.getElementById("freeModeBtn");
+    const minuteModeBtn = document.getElementById("minuteModeBtn");
+    const toggleMirrorBtn = document.getElementById("toggleMirrorBtn");
+
+    let poseLandmarker = null, currentExercise = "pushup", currentMode = "free", countdownActive = false, countdownStart = 0, countdownDurationMs = 60000, mirrorOn = true;
+    const state = {count:0, phase:"init", metric:"--", confidence:0, cameraStarted:false, exerciseState:{pushup:{stage:"up"},squat:{stage:"up"},lunge:{stage:"up"},burpee:{stage:"standing"}}};
+
+    function log(msg){console.log(msg);logEl.textContent=`[${new Date().toLocaleTimeString()}] ${msg}\n`+logEl.textContent}
+    function setMirror(on){mirrorOn=on;video.classList.toggle("mirror",on);canvas.classList.toggle("mirror",on);toggleMirrorBtn.textContent=on?"Mirror ON":"Mirror OFF";}
+    function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
+    function angle(a,b,c){const ab=[a.x-b.x,a.y-b.y], cb=[c.x-b.x,c.y-b.y], dot=ab[0]*cb[0]+ab[1]*cb[1], mag1=Math.hypot(...ab), mag2=Math.hypot(...cb), ratio=clamp(dot/((mag1*mag2)||1),-1,1); return Math.acos(ratio)*180/Math.PI;}
+    function avg(a,b){return (a+b)/2}
+    function fmtMs(ms){if(ms<=0)return"00:00";const total=Math.ceil(ms/1000),m=String(Math.floor(total/60)).padStart(2,"0"),s=String(total%60).padStart(2,"0");return `${m}:${s}`}
+
+    function updateUI(){
+      countValue.textContent=state.count;bigCounter.textContent=state.count;phaseLabel.textContent=state.phase;statusValue.textContent=state.phase;metricValue.textContent=state.metric;
+      hudExercise.textContent=exerciseSelect.options[exerciseSelect.selectedIndex].text;hudMode.textContent=currentMode==="free"?"Libre":"1 minute";confidenceLabel.textContent=`${Math.round(state.confidence*100)}%`;
+      if(countdownActive){const left=countdownDurationMs-(performance.now()-countdownStart);timerLabel.textContent=fmtMs(left);timeValue.textContent=fmtMs(left);if(left<=0){countdownActive=false;timerLabel.textContent="00:00";timeValue.textContent="00:00";state.phase="terminé";}}
+      else {timerLabel.textContent=currentMode==="free"?"Libre":"Prêt";timeValue.textContent=currentMode==="free"?"--":"Prêt";}
+    }
+    function resetSession(){state.count=0;state.phase="reset";state.metric="--";state.confidence=0;state.exerciseState={pushup:{stage:"up"},squat:{stage:"up"},lunge:{stage:"up"},burpee:{stage:"standing"}};countdownActive=false;updateUI();log("Session reset.");}
+    function startMinuteChallenge(){resetSession();currentMode="minute";countdownStart=performance.now();countdownActive=true;state.phase="challenge lancé";updateUI();log("Challenge 1 minute lancé.");}
+    function activateFreeMode(){currentMode="free";countdownActive=false;state.phase="mode libre";updateUI();log("Mode libre activé.");}
+
+    const CONNECTIONS=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,29],[29,31],[28,30],[30,32]];
+    function drawSkeleton(lm){
+      ctx.lineWidth=4;ctx.strokeStyle="#60a5fa";
+      for(const [a,b] of CONNECTIONS){const p1=lm[a],p2=lm[b];if(!p1||!p2)continue;ctx.beginPath();ctx.moveTo(p1.x*canvas.width,p1.y*canvas.height);ctx.lineTo(p2.x*canvas.width,p2.y*canvas.height);ctx.stroke();}
+      for(const p of lm){if(!p)continue;ctx.beginPath();ctx.arc(p.x*canvas.width,p.y*canvas.height,4,0,Math.PI*2);ctx.fillStyle="#5eead4";ctx.fill();}
+    }
+    function drawExerciseHints(lm){
+      ctx.strokeStyle="#f59e0b";ctx.lineWidth=5;
+      const rs=lm[12],re=lm[14],rw=lm[16], rh=lm[24],rk=lm[26],ra=lm[28], lh=lm[23],lk=lm[25],la=lm[27];
+      if(currentExercise==="pushup"&&rs&&re&&rw){ctx.beginPath();ctx.moveTo(rs.x*canvas.width,rs.y*canvas.height);ctx.lineTo(re.x*canvas.width,re.y*canvas.height);ctx.lineTo(rw.x*canvas.width,rw.y*canvas.height);ctx.stroke();}
+      if((currentExercise==="squat"||currentExercise==="lunge"||currentExercise==="burpee")&&rh&&rk&&ra){ctx.beginPath();ctx.moveTo(rh.x*canvas.width,rh.y*canvas.height);ctx.lineTo(rk.x*canvas.width,rk.y*canvas.height);ctx.lineTo(ra.x*canvas.width,ra.y*canvas.height);ctx.stroke();}
+      if((currentExercise==="squat"||currentExercise==="lunge"||currentExercise==="burpee")&&lh&&lk&&la){ctx.beginPath();ctx.moveTo(lh.x*canvas.width,lh.y*canvas.height);ctx.lineTo(lk.x*canvas.width,lk.y*canvas.height);ctx.lineTo(la.x*canvas.width,la.y*canvas.height);ctx.stroke();}
+    }
+    function visibleEnough(lm,ids){const vals=ids.map(i=>lm[i]?.visibility??1);return vals.reduce((a,b)=>a+b,0)/vals.length}
+    function countPushup(lm){const elbow=Math.min(angle(lm[11],lm[13],lm[15]),angle(lm[12],lm[14],lm[16]));state.confidence=visibleEnough(lm,[11,13,15,12,14,16]);state.metric=`${Math.round(elbow)}°`;const e=state.exerciseState.pushup;if(elbow<95){e.stage="down";state.phase="bas"}else if(elbow>155&&e.stage==="down"){e.stage="up";state.count++;state.phase="pompe validée"}else{state.phase=e.stage==="down"?"remontée":"descente"}}
+    function countSquat(lm){const knee=Math.min(angle(lm[23],lm[25],lm[27]),angle(lm[24],lm[26],lm[28]));state.confidence=visibleEnough(lm,[23,25,27,24,26,28]);state.metric=`${Math.round(knee)}°`;const e=state.exerciseState.squat;if(knee<95){e.stage="down";state.phase="en bas"}else if(knee>160&&e.stage==="down"){e.stage="up";state.count++;state.phase="squat validé"}else{state.phase=e.stage==="down"?"remontée":"descente"}}
+    function countLunge(lm){const frontLike=Math.min(angle(lm[23],lm[25],lm[27]),angle(lm[24],lm[26],lm[28]));state.confidence=visibleEnough(lm,[23,25,27,24,26,28]);state.metric=`${Math.round(frontLike)}°`;const e=state.exerciseState.lunge;if(frontLike<95){e.stage="down";state.phase="fente basse"}else if(frontLike>155&&e.stage==="down"){e.stage="up";state.count++;state.phase="fente validée"}else{state.phase=e.stage==="down"?"remontée":"descente"}}
+    function countBurpee(lm){const knee=Math.min(angle(lm[23],lm[25],lm[27]),angle(lm[24],lm[26],lm[28]));const shoulderY=avg(lm[11].y,lm[12].y), hipY=avg(lm[23].y,lm[24].y), torsoHeight=Math.abs(hipY-shoulderY);state.confidence=visibleEnough(lm,[11,12,23,24,25,26,27,28]);state.metric=`${Math.round(knee)}°`;const e=state.exerciseState.burpee;if(knee<95||torsoHeight<0.13){e.stage="low";state.phase="burpee bas"}else if(knee>155&&torsoHeight>0.18&&e.stage==="low"){e.stage="standing";state.count++;state.phase="burpee validé"}else{state.phase=e.stage==="low"?"remontée":"préparation"}}
+    function processExercise(lm){if(currentMode==="minute"&&!countdownActive)return;switch(currentExercise){case"pushup":countPushup(lm);break;case"squat":countSquat(lm);break;case"lunge":countLunge(lm);break;case"burpee":countBurpee(lm);break;}}
+
+    async function initPoseModel(){
+      try{
+        modelStatus.textContent="WASM…";
+        const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
+        modelStatus.textContent="Modèle…";
+        poseLandmarker=await PoseLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"},runningMode:"VIDEO",numPoses:1,minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});
+        modelStatus.textContent="OK";log("Pose model chargé.");
+      }catch(err){modelStatus.textContent="Erreur";log("Erreur modèle: "+(err?.message||err));}
+    }
+    async function startCamera(){
+      try{
+        if(!poseLandmarker) await initPoseModel();
+        modelStatus.textContent="Caméra…";
+        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"user"},width:{ideal:1280},height:{ideal:720}},audio:false});
+        video.srcObject=stream; await video.play(); canvas.width=video.videoWidth||720; canvas.height=video.videoHeight||1280; state.cameraStarted=true; modelStatus.textContent="Actif"; log("Caméra démarrée."); requestAnimationFrame(loop);
+      }catch(err){modelStatus.textContent="Erreur caméra";log("Erreur caméra: "+(err?.message||err));}
+    }
+    function loop(){
+      updateUI();
+      if(!state.cameraStarted||!poseLandmarker||video.readyState<2){requestAnimationFrame(loop);return;}
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      let result=null;
+      try{result=poseLandmarker.detectForVideo(video,performance.now());}catch(err){log("detectForVideo error: "+(err?.message||err));requestAnimationFrame(loop);return;}
+      if(result?.landmarks?.length>0){const lm=result.landmarks[0];drawSkeleton(lm);drawExerciseHints(lm);processExercise(lm);}else{state.phase="pose non détectée";state.confidence=0;}
+      updateUI();requestAnimationFrame(loop);
+    }
+
+    exerciseSelect.addEventListener("change",()=>{currentExercise=exerciseSelect.value;resetSession();log("Exercice sélectionné: "+currentExercise);});
+    startCameraBtn.addEventListener("click",startCamera);
+    resetBtn.addEventListener("click",resetSession);
+    freeModeBtn.addEventListener("click",activateFreeMode);
+    minuteModeBtn.addEventListener("click",startMinuteChallenge);
+    toggleMirrorBtn.addEventListener("click",()=>setMirror(!mirrorOn));
+    updateUI(); setMirror(true); initPoseModel();
+  </script>
+</body>
+</html>
